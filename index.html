@@ -31,6 +31,12 @@ const formatCompact = (value) => {
   return new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short", maximumFractionDigits: 1 }).format(value);
 };
 
+// NOVO: Formatador compacto específico para moeda ("R$ 25 mi" ao invés de "R$ 25.000.000")
+const formatCompactCurrency = (value) => {
+  if (value === 0) return 'R$ 0';
+  return 'R$ ' + new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short", maximumFractionDigits: 1 }).format(value);
+};
+
 // Mapa de cores fixas para as Áreas de Atuação (conforme identidade visual / legenda)
 const AREA_COLORS = {
   'STI': '#3B82F6',                   // Azul
@@ -295,20 +301,21 @@ export default function StrategicDashboard() {
 
   // --- COMPONENTES VISUAIS ---
   const Card = ({ title, value, subValue, icon: Icon, isPositive, emphasis }) => (
-    <div className={`p-4 lg:p-5 bg-white border ${emphasis ? 'border-blue-900 border-b-4 shadow-sm' : 'border-gray-200'} rounded-none flex flex-col justify-between`}>
+    <div className={`p-4 lg:p-5 bg-white border ${emphasis ? 'border-blue-900 border-b-4 shadow-sm' : 'border-gray-200'} rounded-none flex flex-col justify-between overflow-hidden`}>
       <div className="flex justify-between items-start mb-3">
-        <h3 className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wider w-2/3 leading-tight">{title}</h3>
+        <h3 className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wider w-2/3 leading-tight truncate">{title}</h3>
         <div className={`p-2 rounded-full shrink-0 ${emphasis ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-700'}`}>
           <Icon size={16} />
         </div>
       </div>
-      <div>
-        {/* Ajuste de tamanho e whitespace-nowrap para exibir o número inteiro em uma única linha */}
-        <p className={`text-lg xl:text-xl 2xl:text-2xl font-black tracking-tight whitespace-nowrap ${emphasis ? 'text-blue-900' : 'text-gray-900'}`}>{value}</p>
+      <div className="w-full">
+        <p className={`text-xl lg:text-2xl font-black tracking-tight truncate ${emphasis ? 'text-blue-900' : 'text-gray-900'}`} title={typeof value === 'string' ? value : ''}>
+          {value}
+        </p>
         {subValue && (
-          <p className={`text-[10px] lg:text-xs font-semibold mt-1.5 flex items-center gap-1 ${isPositive === true ? 'text-emerald-600' : isPositive === false ? 'text-rose-600' : 'text-gray-500'}`}>
-            {isPositive === true ? <TrendingUp size={12} /> : isPositive === false ? <TrendingDown size={12} /> : null}
-            {subValue}
+          <p className={`text-[10px] lg:text-xs font-semibold mt-1.5 flex items-center gap-1 ${isPositive === true ? 'text-emerald-600' : isPositive === false ? 'text-rose-600' : 'text-gray-500'} truncate`}>
+            {isPositive === true ? <TrendingUp size={12} className="shrink-0" /> : isPositive === false ? <TrendingDown size={12} className="shrink-0" /> : null}
+            <span className="truncate">{subValue}</span>
           </p>
         )}
       </div>
@@ -469,7 +476,7 @@ export default function StrategicDashboard() {
         </div>
 
         {/* SUMMARY CARDS - 6 CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-8 w-full">
           <Card 
             title="Unidades Atendidas" 
             value={kpis.unidadesUnicas} 
@@ -477,17 +484,17 @@ export default function StrategicDashboard() {
           />
           <Card 
             title="Receitas Projetadas" 
-            value={formatCurrency(kpis.rec)} 
+            value={formatCompactCurrency(kpis.rec)} 
             icon={Target} 
           />
           <Card 
             title="Despesas Projetadas" 
-            value={formatCurrency(kpis.desp)} 
+            value={formatCompactCurrency(kpis.desp)} 
             icon={FileText} 
           />
           <Card 
             title="R.O Projetado (Ano)" 
-            value={formatCurrency(kpis.ro)} 
+            value={formatCompactCurrency(kpis.ro)} 
             subValue={`Margem: ${formatPercent(kpis.margem)}`}
             icon={DollarSign} 
             isPositive={kpis.ro >= 0}
@@ -495,13 +502,13 @@ export default function StrategicDashboard() {
           />
           <Card 
             title="Meta R.O (Bimestre)" 
-            value={formatCurrency(kpis.metaBimestre)} 
+            value={formatCompactCurrency(kpis.metaBimestre)} 
             subValue={`16.6% do Ano`}
             icon={Activity} 
           />
           <Card 
             title="R.O Realizado" 
-            value={formatCurrency(kpis.roReal)} 
+            value={formatCompactCurrency(kpis.roReal)} 
             subValue={kpis.metaBimestre > 0 ? `${formatPercent(kpis.atingimentoBimestre)} da meta bi.` : 'Meta base deficitária'}
             icon={BarChart2} 
             isPositive={kpis.roReal >= kpis.metaBimestre && kpis.metaBimestre > 0}
@@ -539,7 +546,7 @@ export default function StrategicDashboard() {
               <ComposedChart data={dataDiretorComposicao} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                 <XAxis dataKey="name" tick={{fill: '#64748B', fontSize: 11, fontWeight: 600}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" height={80} />
-                <YAxis yAxisId="left" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="left" tickFormatter={formatCompactCurrency} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} width={80} />
                 <RechartsTooltip formatter={(val) => formatCurrency(val)} contentStyle={{ border: 'none', borderRadius: '4px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}} />
                 <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 'bold' }} />
                 
@@ -582,7 +589,7 @@ export default function StrategicDashboard() {
                   textAnchor="end"
                   height={80}
                 />
-                <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={formatCompactCurrency} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} width={80} />
                 <RechartsTooltip 
                   formatter={(val) => formatCurrency(val)} 
                   cursor={{fill: '#F8FAFC'}}
@@ -602,7 +609,7 @@ export default function StrategicDashboard() {
                   <LabelList 
                     dataKey="roRealizado" 
                     position="top" 
-                    formatter={formatCompact} 
+                    formatter={formatCompactCurrency} 
                     style={{ fontSize: '10px', fill: '#475569', fontWeight: 600 }} 
                   />
                 </Bar>
@@ -668,8 +675,8 @@ export default function StrategicDashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                <XAxis type="number" dataKey="metaJanFev" name="Meta (Jan/Fev)" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} />
-                <YAxis type="number" dataKey="roRealizado" name="Realizado (Jan/Fev)" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} />
+                <XAxis type="number" dataKey="metaJanFev" name="Meta (Jan/Fev)" tickFormatter={formatCompactCurrency} tick={{fill: '#64748B', fontSize: 11}} />
+                <YAxis type="number" dataKey="roRealizado" name="Realizado (Jan/Fev)" tickFormatter={formatCompactCurrency} tick={{fill: '#64748B', fontSize: 11}} width={80} />
                 <ZAxis type="number" dataKey="receitas" name="Receita Global" range={[50, 800]} />
                 <RechartsTooltip 
                   cursor={{ strokeDasharray: '3 3' }}
@@ -747,7 +754,7 @@ export default function StrategicDashboard() {
                   margin={{ top: 15, right: 80, left: 10, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E2E8F0" />
-                  <XAxis type="number" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} />
+                  <XAxis type="number" tickFormatter={formatCompactCurrency} tick={{fill: '#64748B', fontSize: 11}} />
                   <YAxis type="category" dataKey="name" width={160} tick={{fill: '#0F172A', fontWeight: 600, fontSize: 11}} axisLine={false} tickLine={false} />
                   <RechartsTooltip formatter={(val) => formatCurrency(val)} cursor={{fill: '#F8FAFC'}}/>
                   <ReferenceLine x={0} stroke="#94A3B8" />
@@ -758,7 +765,7 @@ export default function StrategicDashboard() {
                     <LabelList 
                       dataKey="ro2026" 
                       position="right" 
-                      formatter={formatCompact} 
+                      formatter={formatCompactCurrency} 
                       style={{ fontSize: '10px', fill: '#475569', fontWeight: 600 }} 
                     />
                   </Bar>
