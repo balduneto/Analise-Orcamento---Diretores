@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
-  PieChart, Pie, Cell, ComposedChart, ReferenceLine, LabelList
+  PieChart, Pie, Cell, ComposedChart, ReferenceLine, LabelList, Line, ScatterChart, Scatter, ZAxis
 } from 'recharts';
 import { 
   UploadCloud, TrendingUp, TrendingDown, DollarSign, Briefcase, 
@@ -202,6 +202,49 @@ export default function StrategicDashboard() {
   const dataArea = useMemo(() => aggregateBy('area', filteredData), [filteredData]);
   const dataDiretor = useMemo(() => aggregateBy('diretor', data), [data]); 
   const dataUnidade = useMemo(() => aggregateBy('unidade', filteredData), [filteredData]); 
+
+  // --- NOVO: Agregação Avançada para Composição de Áreas por Diretor ---
+  const dataDiretorComposicao = useMemo(() => {
+    const result = {};
+    filteredData.forEach(d => {
+      const dir = d.diretor || 'N/D';
+      const area = d.area || 'N/D';
+      if (!result[dir]) {
+        result[dir] = { name: dir, totalReceita: 0, totalDespesa: 0, roRealizado: 0 };
+      }
+      if (!result[dir][area]) {
+        result[dir][area] = 0;
+      }
+      result[dir][area] += d.receitas;
+      result[dir].totalReceita += d.receitas;
+      result[dir].totalDespesa += d.despesas;
+      result[dir].roRealizado += d.roRealizado;
+    });
+    return Object.values(result).sort((a, b) => b.totalReceita - a.totalReceita);
+  }, [filteredData]);
+
+  // --- NOVO: Agregação para Share (Peso) de Performance por Diretor ---
+  const dataDiretorShare = useMemo(() => {
+    if (kpis.rec === 0 && kpis.desp === 0) return [];
+    
+    return dataDiretor.map(d => {
+      // 1. % do Orçamento (Peso da despesa dele sobre a despesa total)
+      const pctDespesa = kpis.desp > 0 ? (d.despesas / kpis.desp) * 100 : 0;
+      
+      // 2. % da Receita Global (Peso da receita dele sobre a receita total)
+      const pctReceita = kpis.rec > 0 ? (d.receitas / kpis.rec) * 100 : 0;
+      
+      // 3. % em relação ao Período (Qual a participação dele no RO positivo gerado até agora)
+      const pctRealizado = (kpis.roReal > 0 && d.roRealizado > 0) ? (d.roRealizado / kpis.roReal) * 100 : 0;
+
+      return {
+        name: d.name,
+        pctDespesa,
+        pctReceita,
+        pctRealizado
+      };
+    }).sort((a, b) => b.pctReceita - a.pctReceita);
+  }, [dataDiretor, kpis]);
 
   // --- GERAÇÃO DE INSIGHTS ESTRATÉGICOS DINÂMICOS ---
   const insights = useMemo(() => {
@@ -481,6 +524,36 @@ export default function StrategicDashboard() {
           </div>
         </div>
 
+        {/* GRÁFICO NOVO 1: IMPACTO DIRETORES NA RECEITA GLOBAL (COM ÁREAS E ORÇAMENTO) */}
+        <div className="border border-gray-200 p-6 bg-white shadow-sm mb-8">
+          <div className="mb-6 border-b border-gray-100 pb-4">
+            <h3 className="text-sm font-bold uppercase text-gray-900 mb-2">
+              Impacto dos Diretores na Receita Global: Composição por Área vs Orçamento
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed max-w-3xl">
+              <strong>Como ler:</strong> As barras empilhadas representam o total da Receita captada pelo diretor, com as cores indicando o impacto de cada Área de Atuação neste montante. A <strong className="text-rose-500">linha vermelha</strong> sobreposta marca o Orçamento Projetado (Despesas) daquela diretoria, facilitando o comparativo de quem se "paga" com folga.
+            </p>
+          </div>
+          <div className="h-96">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={dataDiretorComposicao} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis dataKey="name" tick={{fill: '#64748B', fontSize: 11, fontWeight: 600}} axisLine={false} tickLine={false} angle={-45} textAnchor="end" height={80} />
+                <YAxis yAxisId="left" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} />
+                <RechartsTooltip formatter={(val) => formatCurrency(val)} contentStyle={{ border: 'none', borderRadius: '4px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}} />
+                <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 'bold' }} />
+                
+                {areasUnicas.filter(a => a !== 'Todos').map((area, index) => (
+                  <Bar key={area} yAxisId="left" dataKey={area} name={`Receita: ${area}`} stackId="a" fill={AREA_COLORS[area] || COLORS[index % COLORS.length]} />
+                ))}
+                
+                <ReferenceLine y={0} yAxisId="left" stroke="#94A3B8" />
+                <Line yAxisId="left" type="monotone" dataKey="totalDespesa" name="Orçamento Anual (Despesas)" stroke="#EF4444" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         {/* GRÁFICO COMPARATIVO NOVO: REALIZADO VS META */}
         <div className="border border-gray-200 p-6 bg-white shadow-sm mb-8">
           <div className="mb-6 border-b border-gray-100 pb-4">
@@ -497,7 +570,7 @@ export default function StrategicDashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={(!hasFilters ? dataDiretor : dataUnidade).slice(0, 15)}
-                margin={{ top: 25, right: 30, left: 20, bottom: 40 }}
+                margin={{ top: 35, right: 30, left: 20, bottom: 60 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                 <XAxis 
@@ -507,6 +580,7 @@ export default function StrategicDashboard() {
                   tickLine={false} 
                   angle={-45} 
                   textAnchor="end"
+                  height={80}
                 />
                 <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} />
                 <RechartsTooltip 
@@ -537,6 +611,97 @@ export default function StrategicDashboard() {
           </div>
         </div>
 
+        {/* GRÁFICO NOVO 3: SHARE DE PERFORMANCE (%) POR DIRETOR */}
+        <div className="border border-gray-200 p-6 bg-white shadow-sm mb-8">
+          <div className="mb-6 border-b border-gray-100 pb-4">
+            <h3 className="text-sm font-bold uppercase text-gray-900 mb-2">
+              Performance Relativa (%): Peso no Orçamento, na Receita Global e no Período
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed max-w-3xl">
+              <strong>Análise de Share:</strong> Este gráfico responde "Qual o tamanho deste diretor no todo?". A <strong>barra vermelha</strong> mostra a % do Orçamento da empresa que ele consome. A <strong>barra verde</strong> mostra a % de Receita que ele devolve para a empresa. A <strong>barra roxa</strong> indica a parcela dele no Resultado gerado neste 1º Bimestre.
+            </p>
+          </div>
+          <div className="h-96">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={dataDiretorShare.slice(0, 15)}
+                margin={{ top: 35, right: 30, left: 20, bottom: 60 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{fill: '#64748B', fontSize: 11, fontWeight: 600}} 
+                  axisLine={false} 
+                  tickLine={false} 
+                  angle={-45} 
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis tickFormatter={(val) => `${val.toFixed(0)}%`} tick={{fill: '#64748B', fontSize: 11}} axisLine={false} tickLine={false} />
+                <RechartsTooltip 
+                  formatter={(val, name) => [`${val.toFixed(1)}%`, name]} 
+                  cursor={{fill: '#F8FAFC'}}
+                  contentStyle={{ border: 'none', borderRadius: '4px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}
+                />
+                <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 'bold' }} />
+                
+                <Bar dataKey="pctReceita" name="% da Receita Global" fill="#10B981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="pctDespesa" name="% do Orçamento Global (Custo)" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="pctRealizado" name="% Entregue no Período (RO)" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* GRÁFICO NOVO 2: MATRIZ DE EFICIÊNCIA (UNIDADES x PERÍODO x RECEITA GLOBAL) */}
+        <div className="border border-gray-200 p-6 bg-white shadow-sm mb-8">
+          <div className="mb-6 border-b border-gray-100 pb-4">
+            <h3 className="text-sm font-bold uppercase text-gray-900 mb-2">
+              Matriz de Impacto das Unidades: Eficiência no Período (Jan+Fev)
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed max-w-3xl">
+              <strong>Análise Multi-dimensional:</strong> Cada círculo é uma Unidade. O <strong>eixo horizontal</strong> mostra a Meta do Bimestre, o <strong>vertical</strong> o Realizado. O tamanho da bolha reflete o peso dessa unidade na <strong>Receita Global</strong>. 
+              <span className="text-emerald-600 font-bold ml-1">Verdes</span> superaram a meta, <span className="text-amber-500 font-bold mx-1">Laranjas</span> ficaram abaixo, e <span className="text-rose-500 font-bold ml-1">Vermelhas</span> operaram com déficit no período.
+            </p>
+          </div>
+          <div className="h-96">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis type="number" dataKey="metaJanFev" name="Meta (Jan/Fev)" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} />
+                <YAxis type="number" dataKey="roRealizado" name="Realizado (Jan/Fev)" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} />
+                <ZAxis type="number" dataKey="receitas" name="Receita Global" range={[50, 800]} />
+                <RechartsTooltip 
+                  cursor={{ strokeDasharray: '3 3' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-white p-4 border border-gray-200 shadow-xl rounded">
+                          <p className="font-bold text-gray-800 text-sm mb-3 border-b border-gray-100 pb-2">{data.name}</p>
+                          <p className="text-xs text-gray-600 mb-1">Receita Global (Peso): <span className="font-bold text-blue-600">{formatCurrency(data.receitas)}</span></p>
+                          <p className="text-xs text-gray-600 mb-1">Meta Bimestral: <span className="font-bold text-gray-600">{formatCurrency(data.metaJanFev)}</span></p>
+                          <p className="text-xs text-gray-600">R.O Realizado: <span className={`font-bold ${data.roRealizado >= data.metaJanFev ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(data.roRealizado)}</span></p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <ReferenceLine x={0} stroke="#94A3B8" />
+                <ReferenceLine y={0} stroke="#94A3B8" />
+                <Scatter name="Unidades" data={dataUnidade} fill="#3B82F6" opacity={0.75}>
+                  {dataUnidade.map((entry, index) => {
+                    // Verde = Bateu a meta, Laranja = Positivo mas não bateu, Vermelho = Prejuízo
+                    const color = entry.roRealizado >= entry.metaJanFev ? '#10B981' : (entry.roRealizado < 0 ? '#EF4444' : '#F59E0B');
+                    return <Cell key={`cell-${index}`} fill={color} />;
+                  })}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         {/* GRÁFICOS: Áreas e Ranking Anual */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <div className="border border-gray-200 p-6 bg-white shadow-sm">
@@ -550,8 +715,8 @@ export default function StrategicDashboard() {
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={90}
+                    innerRadius={40}
+                    outerRadius={75}
                     paddingAngle={3}
                     label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
                     labelLine={{ stroke: '#94A3B8', strokeWidth: 1 }}
@@ -579,11 +744,11 @@ export default function StrategicDashboard() {
                 <ComposedChart 
                   data={!hasFilters ? dataDiretor : dataUnidade.slice(0, 15)} 
                   layout="vertical" 
-                  margin={{ top: 5, right: 50, left: 60, bottom: 5 }}
+                  margin={{ top: 15, right: 80, left: 10, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E2E8F0" />
                   <XAxis type="number" tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} tick={{fill: '#64748B', fontSize: 11}} />
-                  <YAxis type="category" dataKey="name" tick={{fill: '#0F172A', fontWeight: 600, fontSize: 11}} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" width={160} tick={{fill: '#0F172A', fontWeight: 600, fontSize: 11}} axisLine={false} tickLine={false} />
                   <RechartsTooltip formatter={(val) => formatCurrency(val)} cursor={{fill: '#F8FAFC'}}/>
                   <ReferenceLine x={0} stroke="#94A3B8" />
                   <Bar dataKey="ro2026" name="R.O Anual Projetado" barSize={20} radius={[0, 4, 4, 0]}>
